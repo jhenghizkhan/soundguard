@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>SOUNDGUARD</title>
+
+    <style>
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: auto;
+            background: white;
+            padding: 25px;
+            border-radius: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+        }
+
+        h1 {
+            font-size: 34px;
+            margin-bottom: 5px;
+        }
+
+        .subtitle {
+            color: #555;
+            margin-bottom: 25px;
+        }
+
+        input {
+            width: 90%;
+            padding: 14px;
+            margin: 8px 0;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 90%;
+            padding: 15px;
+            margin: 10px 0;
+            border: none;
+            border-radius: 10px;
+            font-size: 17px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        #startButton {
+            background: #222;
+            color: white;
+        }
+
+        #stopButton {
+            background: #ccc;
+            color: black;
+        }
+
+        .level {
+            font-size: 55px;
+            font-weight: bold;
+            margin: 25px 0 10px;
+        }
+
+        .status {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px;
+        }
+
+        .warnings {
+            font-size: 18px;
+            margin-top: 20px;
+        }
+
+        .info {
+            margin-top: 20px;
+            color: #666;
+            font-size: 14px;
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+
+<div class="container">
+
+    <h1>SOUNDGUARD</h1>
+
+    <div class="subtitle">
+        Smart Classroom Noise Monitoring
+    </div>
+
+
+    <!-- TEACHER -->
+
+    <input
+        type="text"
+        id="teacherName"
+        placeholder="Teacher Name"
+    >
+
+
+    <!-- CLASS -->
+
+    <input
+        type="text"
+        id="className"
+        placeholder="Class"
+    >
+
+
+    <!-- START -->
+
+    <button
+        id="startButton"
+        onclick="startMonitoring()"
+    >
+        START MONITORING
+    </button>
+
+
+    <!-- STOP -->
+
+    <button
+        id="stopButton"
+        onclick="stopMonitoring()"
+    >
+        STOP MONITORING
+    </button>
+
+
+    <!-- SOUND LEVEL -->
+
+    <div
+        class="level"
+        id="level"
+    >
+        0%
+    </div>
+
+
+    <!-- STATUS -->
+
+    <div
+        class="status"
+        id="status"
+    >
+        WAITING
+    </div>
+
+
+    <!-- WARNINGS -->
+
+    <div
+        class="warnings"
+        id="warnings"
+    >
+        Warnings: 0 / 3
+    </div>
+
+
+    <!-- INFORMATION -->
+
+    <div class="info">
+
+        Warning threshold:
+        <strong>4000%</strong>
+
+    </div>
+
+</div>
+
+
+
+<script>
+
+
+// ============================================================
+// SOUNDGUARD SETTINGS
+// ============================================================
+
+
+// Microphone sensitivity
+
+const SOUND_SENSITIVITY = 3000;
+
+
+// Noise warning threshold
+
+const WARNING_LEVEL = 1000;
+
+
+// Maximum warnings
+
+const MAX_WARNINGS = 3;
+
+
+// Noise must remain loud for approximately 0.3 seconds
+
+const NOISE_TIME_REQUIRED = 300;
+
+
+// Prevent repeated warnings for 5 seconds
+
+const WARNING_COOLDOWN = 5000;
+
+
+
+// ============================================================
+// GOOGLE APPS SCRIPT
+// ============================================================
+
+
+// IMPORTANT:
+// Put your existing WORKING Google Apps Script Web App URL here.
+
+const WEB_APP_URL =
+    "https://script.google.com/macros/s/AKfycbz25IhrRRSxl3x3NhD0SP0I729hWMwS_wkxESDxdKEXp8wtG8DXbbIbSDfUe9qVrfYN/exec";
+
+
+// IMPORTANT:
+// Put your existing WORKING API token here.
+
+const API_TOKEN =
+    "CNM_SCHOOL_2026_A8K4P7X2M9Q5";
+
+
+
+// ============================================================
+// VARIABLES
+// ============================================================
+
+let audioContext = null;
+
+let analyser = null;
+
+let microphone = null;
+
+let microphoneStream = null;
+
+let animationFrame = null;
+
+let monitoring = false;
+
+let warningNumber = 0;
+
+let noiseStartTime = null;
+
+let lastWarningTime = 0;
+
+
+
+// ============================================================
+// PAGE ELEMENTS
+// ============================================================
+
+const levelElement =
+    document.getElementById("level");
+
+const statusElement =
+    document.getElementById("status");
+
+const warningElement =
+    document.getElementById("warnings");
+
+const startButton =
+    document.getElementById("startButton");
+
+const teacherInput =
+    document.getElementById("teacherName");
+
+const classInput =
+    document.getElementById("className");
+
+
+
+// ============================================================
+// START MONITORING
+// ============================================================
+
+async function startMonitoring() {
+
+
+    const teacher =
+        teacherInput.value.trim();
+
+
+    const className =
+        classInput.value.trim();
+
+
+    if (!teacher) {
+
+        alert(
+            "Please enter the teacher name."
+        );
+
+        return;
+    }
+
+
+    if (!className) {
+
+        alert(
+            "Please enter the class."
+        );
+
+        return;
+    }
+
+
+    try {
+
+
+        // Request microphone permission
+
+        microphoneStream =
+            await navigator.mediaDevices
+            .getUserMedia({
+                audio: true
+            });
+
+
+        // Create audio context
+
+        audioContext =
+            new (
+                window.AudioContext ||
+                window.webkitAudioContext
+            )();
+
+
+        // Create analyser
+
+        analyser =
+            audioContext.createAnalyser();
+
+
+        analyser.fftSize = 1024;
+
+
+        // Connect microphone
+
+        microphone =
+            audioContext
+            .createMediaStreamSource(
+                microphoneStream
+            );
+
+
+        microphone.connect(
+            analyser
+        );
+
+
+        // Start monitoring
+
+        monitoring = true;
+
+
+        startButton.disabled = true;
+
+        teacherInput.disabled = true;
+
+        classInput.disabled = true;
+
+
+        statusElement.textContent =
+            "NORMAL";
+
+
+        statusElement.style.color =
+            "green";
+
+
+        speak(
+            "Soundguard monitoring started."
+        );
+
+
+        monitorSound();
+
+
+    } catch (error) {
+
+
+        console.error(
+            "Microphone error:",
+            error
+        );
+
+
+        alert(
+            "Microphone access was not allowed. " +
+            "Please allow microphone access and try again."
+        );
+
+    }
+
+}
+
+
+
+// ============================================================
+// MONITOR SOUND
+// ============================================================
+
+function monitorSound() {
+
+
+    if (!monitoring) {
+
+        return;
+    }
+
+
+    const data =
+        new Float32Array(
+            analyser.fftSize
+        );
+
+
+    analyser.getFloatTimeDomainData(
+        data
+    );
+
+
+    let sum = 0;
+
+
+    for (
+        let i = 0;
+        i < data.length;
+        i++
+    ) {
+
+        sum += data[i] * data[i];
+
+    }
+
+
+    // Calculate RMS
+
+    const rms =
+        Math.sqrt(
+            sum / data.length
+        );
+
+
+    // Convert microphone signal to percentage
+
+    // There is NO 100% limit.
+
+    const level =
+        rms * SOUND_SENSITIVITY;
+
+
+    // Display level
+
+    levelElement.textContent =
+        level.toFixed(1) + "%";
+
+
+    // Determine status
+
+    if (
+        level >= WARNING_LEVEL
+    ) {
+
+        statusElement.textContent =
+            "VERY LOUD";
+
+
+        statusElement.style.color =
+            "red";
+
+
+        processNoise(level);
+
+    }
+
+    else {
+
+        statusElement.textContent =
+            "NORMAL";
+
+
+        statusElement.style.color =
+            "green";
+
+
+        noiseStartTime = null;
+
+    }
+
+
+    // Continue monitoring
+
+    animationFrame =
+        requestAnimationFrame(
+            monitorSound
+        );
+
+}
+
+
+
+// ============================================================
+// PROCESS NOISE
+// ============================================================
+
+function processNoise(level) {
+
+
+    const now =
+        Date.now();
+
+
+    // Start noise timer
+
+    if (
+        noiseStartTime === null
+    ) {
+
+        noiseStartTime = now;
+
+        return;
+    }
+
+
+    // Require continuous loud noise
+
+    if (
+        now - noiseStartTime
+        < NOISE_TIME_REQUIRED
+    ) {
+
+        return;
+    }
+
+
+    // Prevent immediate repeated warnings
+
+    if (
+        now - lastWarningTime
+        < WARNING_COOLDOWN
+    ) {
+
+        return;
+    }
+
+
+    lastWarningTime = now;
+
+
+    // Increase warning number
+
+    warningNumber++;
+
+
+    warningElement.textContent =
+        "Warnings: " +
+        warningNumber +
+        " / " +
+        MAX_WARNINGS;
+
+
+
+    // ========================================================
+    // WARNING 1
+    // ========================================================
+
+    if (
+        warningNumber === 1
+    ) {
+
+
+        speak(
+            "Attention please. " +
+            "The noise level is too high. " +
+            "Please lower your voice."
+        );
+
+    }
+
+
+
+    // ========================================================
+    // WARNING 2
+    // ========================================================
+
+    else if (
+        warningNumber === 2
+    ) {
+
+
+        speak(
+            "This is your second warning. " +
+            "Please lower your voice."
+        );
+
+    }
+
+
+
+    // ========================================================
+    // WARNING 3
+    // ========================================================
+
+    else if (
+        warningNumber >= MAX_WARNINGS
+    ) {
+
+
+        speak(
+            "This is your final warning. " +
+            "If you continue making noise, " +
+            "I will inform the principal."
+        );
+
+
+        // Send email
+
+        sendAlert(level);
+
+
+        // Reset warning cycle
+
+        warningNumber = 0;
+
+
+        warningElement.textContent =
+            "Warnings: 0 / 3";
+
+    }
+
+
+    // Reset noise timer
+
+    noiseStartTime = null;
+
+}
+
+
+
+// ============================================================
+// SEND EMAIL THROUGH GOOGLE APPS SCRIPT
+// ============================================================
+
+async function sendAlert(level) {
+
+
+    const teacher =
+        teacherInput.value.trim();
+
+
+    const className =
+        classInput.value.trim();
+
+
+    const dateTime =
+        new Date().toLocaleString();
+
+
+    const data = {
+
+
+        token:
+            API_TOKEN,
+
+
+        teacher:
+            teacher,
+
+
+        className:
+            className,
+
+
+        noiseLevel:
+            Number(
+                level.toFixed(1)
+            ),
+
+
+        warnings:
+            3,
+
+
+        dateTime:
+            dateTime
+
+    };
+
+
+
+    try {
+
+
+        console.log(
+            "Sending SOUNDGUARD alert..."
+        );
+
+
+        /*
+            no-cors is used because this page
+            is running in a browser.
+
+            Google Apps Script will still
+            receive the POST request.
+        */
+
+
+        await fetch(
+
+            WEB_APP_URL,
+
+            {
+
+                method:
+                    "POST",
+
+
+                mode:
+                    "no-cors",
+
+
+                headers: {
+
+                    "Content-Type":
+                        "text/plain;charset=utf-8"
+
+                },
+
+
+                body:
+                    JSON.stringify(data)
+
+            }
+
+        );
+
+
+        console.log(
+            "Alert sent to Google Apps Script."
+        );
+
+
+    } catch (error) {
+
+
+        console.error(
+            "Email sending error:",
+            error
+        );
+
+    }
+
+}
+
+
+
+// ============================================================
+// STOP MONITORING
+// ============================================================
+
+function stopMonitoring() {
+
+
+    monitoring = false;
+
+
+    // Stop animation
+
+    if (animationFrame) {
+
+        cancelAnimationFrame(
+            animationFrame
+        );
+
+        animationFrame = null;
+
+    }
+
+
+    // Stop microphone
+
+    if (microphoneStream) {
+
+
+        microphoneStream
+        .getTracks()
+        .forEach(
+            track => track.stop()
+        );
+
+
+        microphoneStream = null;
+
+    }
+
+
+    // Close audio context
+
+    if (audioContext) {
+
+
+        audioContext.close();
+
+
+        audioContext = null;
+
+    }
+
+
+    microphone = null;
+
+    analyser = null;
+
+
+    // Reset display
+
+    levelElement.textContent =
+        "0%";
+
+
+    statusElement.textContent =
+        "STOPPED";
+
+
+    statusElement.style.color =
+        "black";
+
+
+    // Reset warnings
+
+    warningNumber = 0;
+
+
+    warningElement.textContent =
+        "Warnings: 0 / 3";
+
+
+    // Enable controls
+
+    startButton.disabled =
+        false;
+
+
+    teacherInput.disabled =
+        false;
+
+
+    classInput.disabled =
+        false;
+
+}
+
+
+
+// ============================================================
+// VOICE ANNOUNCEMENT
+// ============================================================
+
+function speak(text) {
+
+
+    if (
+        "speechSynthesis"
+        in window
+    ) {
+
+
+        // Stop any previous announcement
+
+        window.speechSynthesis.cancel();
+
+
+        const speech =
+            new SpeechSynthesisUtterance(
+                text
+            );
+
+
+        speech.rate =
+            0.9;
+
+
+        speech.volume =
+            1.0;
+
+
+        window.speechSynthesis.speak(
+            speech
+        );
+
+    }
+
+}
+
+</script>
+
+
+</body>
+
+</html>
